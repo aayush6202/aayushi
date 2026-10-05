@@ -61,26 +61,55 @@ const birthdayConfig = {
     }
     fluteTimer=setTimeout(()=>{fluteVoices=[];if(flutePlaying)playFlutePhrase();},(at-start+beat*2)*1000);
   }
-  async function toggleMusic() {
-    if (birthdayConfig.music) {
-      if (music.paused) {
-        try { await music.play(); musicButton.classList.add('playing'); musicButton.setAttribute('aria-label','Pause background music'); musicButton.title='Pause music'; }
-        catch { musicButton.title='Check the music path in birthdayConfig'; }
-      } else { music.pause(); musicButton.classList.remove('playing'); musicButton.setAttribute('aria-label','Play background music'); musicButton.title='Play music'; }
-      return;
-    }
-    if (flutePlaying) {
-      stopFlute(); musicButton.classList.remove('playing'); musicButton.setAttribute('aria-label','Play flute birthday song'); musicButton.title='Play flute birthday song'; return;
-    }
+  function setMusicButton(playing, custom=false) {
+    musicButton.classList.toggle('playing',playing);
+    musicButton.setAttribute('aria-label',playing?'Pause birthday music':(custom?'Play background music':'Play flute birthday song'));
+    musicButton.title=playing?'Pause birthday music':(custom?'Play background music':'Play flute birthday song');
+  }
+  async function startFlute() {
     try {
       const AudioContextClass=window.AudioContext||window.webkitAudioContext;
       if (!AudioContextClass) throw new Error('Web Audio unavailable');
       fluteContext ||= new AudioContextClass();
-      await fluteContext.resume();
+      if (fluteContext.state!=='running') {
+        await Promise.race([fluteContext.resume(),new Promise(resolve=>setTimeout(resolve,250))]);
+      }
+      if (fluteContext.state!=='running') return false;
       fluteMaster=fluteContext.createGain(); fluteMaster.gain.value=.42; fluteMaster.connect(fluteContext.destination);
-      flutePlaying=true; playFlutePhrase(); musicButton.classList.add('playing');
-      musicButton.setAttribute('aria-label','Pause flute birthday song'); musicButton.title='Pause flute birthday song';
-    } catch { musicButton.title='Flute audio is not supported in this browser'; }
+      flutePlaying=true; playFlutePhrase(); setMusicButton(true); return true;
+    } catch { musicButton.title='Flute audio is not supported in this browser'; return false; }
+  }
+  async function startSong() {
+    if (birthdayConfig.music) {
+      try { await music.play(); setMusicButton(true,true); return true; }
+      catch { return startFlute(); }
+    }
+    return startFlute();
+  }
+  async function toggleMusic() {
+    if (birthdayConfig.music && !music.paused) { music.pause(); setMusicButton(false,true); return; }
+    if (flutePlaying) { stopFlute(); setMusicButton(false); return; }
+    if (!await startSong()) musicButton.title='Tap the music button to try again';
+  }
+  function tryAutoplay() {
+    let waitingForGesture=false;
+    const removeGestureFallback=()=>{
+      if (!waitingForGesture) return;
+      waitingForGesture=false;
+      document.removeEventListener('click',resumeAfterGesture,true);
+      document.removeEventListener('keydown',resumeAfterGesture,true);
+    };
+    const resumeAfterGesture=async event=>{
+      if (event.target?.closest?.('#musicToggle')) return;
+      if (await startSong()) removeGestureFallback();
+    };
+    startSong().then(started=>{
+      if (started) return;
+      waitingForGesture=true;
+      musicButton.title='Tap anywhere to start the birthday song if autoplay is blocked';
+      document.addEventListener('click',resumeAfterGesture,true);
+      document.addEventListener('keydown',resumeAfterGesture,true);
+    });
   }
 
   // Low-cost ambient stars: fixed canvas, capped DPR and particle count.
@@ -163,5 +192,6 @@ const birthdayConfig = {
   function startFinale(){if(finaleStarted)return;finaleStarted=true;for(let i=0;i<85;i++)setTimeout(()=>burst(Math.random()*innerWidth,-8,1),i*110);const fw=$('#fireworks');for(let i=0;i<8;i++){const p=document.createElement('i');p.className='firework';p.style.left=`${8+Math.random()*84}%`;p.style.top=`${12+Math.random()*60}%`;p.style.setProperty('--x',`${Math.random()*90-45}px`);p.style.setProperty('--y',`${Math.random()*90-45}px`);p.style.animationDelay=`${Math.random()*2}s`;fw.appendChild(p);}}
   $('#replay').addEventListener('click',()=>location.reload());
   musicButton.addEventListener('click',toggleMusic);
+  tryAutoplay();
 })();
 
