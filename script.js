@@ -1,4 +1,4 @@
-/* Personalize the whole experience here. Replace the sample photo files and optional music file in /assets. */
+/* Personalize the whole experience here. Replace the photo files and optional background music in /assets. */
 const birthdayConfig = {
   name: "Aayushi",
   senderName: "Aayush",
@@ -23,6 +23,65 @@ const birthdayConfig = {
   document.title = `Happy Birthday, ${name}`;
   const music = $('#music');
   if (birthdayConfig.music) music.src = birthdayConfig.music;
+  const musicButton = $('#musicToggle');
+  let fluteContext = null, fluteMaster = null, flutePlaying = false, fluteTimer = null, fluteVoices = [];
+  const birthdayTune = [
+    ['G4',.5],['G4',.5],['A4',1],['G4',1],['C5',1],['B4',2],
+    ['G4',.5],['G4',.5],['A4',1],['G4',1],['D5',1],['C5',2],
+    ['G4',.5],['G4',.5],['G5',1],['E5',1],['C5',1],['B4',1],['A4',2],
+    ['F5',.5],['F5',.5],['E5',1],['C5',1],['D5',1],['C5',2]
+  ];
+  const fluteNotes = {G4:392,A4:440,B4:494,C5:523,D5:587,E5:659,F5:698,G5:784};
+  function stopFlute() {
+    flutePlaying = false;
+    clearTimeout(fluteTimer);
+    const now = fluteContext?.currentTime || 0;
+    if (fluteMaster) { fluteMaster.gain.cancelScheduledValues(now); fluteMaster.gain.setTargetAtTime(0,now,.035); }
+    fluteVoices.forEach(voice => { try { voice.stop(now+.14); } catch {} });
+    setTimeout(() => { fluteVoices.forEach(voice => { try { voice.disconnect(); } catch {} }); fluteVoices=[]; try { fluteMaster?.disconnect(); } catch {} fluteMaster=null; },220);
+  }
+  function playFlutePhrase() {
+    if (!flutePlaying || !fluteContext || !fluteMaster) return;
+    const beat=.43, start=fluteContext.currentTime+.08;
+    let at=start;
+    for (const [note,length] of birthdayTune) {
+      const duration=length*beat, end=at+duration;
+      const voiceGain=fluteContext.createGain();
+      voiceGain.gain.setValueAtTime(.0001,at);
+      voiceGain.gain.exponentialRampToValueAtTime(.22,at+.045);
+      voiceGain.gain.setValueAtTime(.22,Math.max(at+.05,end-.07));
+      voiceGain.gain.exponentialRampToValueAtTime(.0001,end);
+      voiceGain.connect(fluteMaster);
+      const fundamental=fluteContext.createOscillator(); fundamental.type='sine'; fundamental.frequency.setValueAtTime(fluteNotes[note],at); fundamental.connect(voiceGain);
+      const overtone=fluteContext.createOscillator(), overtoneGain=fluteContext.createGain();
+      overtone.type='sine'; overtone.frequency.setValueAtTime(fluteNotes[note]*2,at); overtoneGain.gain.value=.055; overtone.connect(overtoneGain); overtoneGain.connect(voiceGain);
+      fundamental.start(at); overtone.start(at); fundamental.stop(end+.02); overtone.stop(end+.02);
+      fluteVoices.push(fundamental,overtone,voiceGain,overtoneGain);
+      at=end+.018;
+    }
+    fluteTimer=setTimeout(()=>{fluteVoices=[];if(flutePlaying)playFlutePhrase();},(at-start+beat*2)*1000);
+  }
+  async function toggleMusic() {
+    if (birthdayConfig.music) {
+      if (music.paused) {
+        try { await music.play(); musicButton.classList.add('playing'); musicButton.setAttribute('aria-label','Pause background music'); musicButton.title='Pause music'; }
+        catch { musicButton.title='Check the music path in birthdayConfig'; }
+      } else { music.pause(); musicButton.classList.remove('playing'); musicButton.setAttribute('aria-label','Play background music'); musicButton.title='Play music'; }
+      return;
+    }
+    if (flutePlaying) {
+      stopFlute(); musicButton.classList.remove('playing'); musicButton.setAttribute('aria-label','Play flute birthday song'); musicButton.title='Play flute birthday song'; return;
+    }
+    try {
+      const AudioContextClass=window.AudioContext||window.webkitAudioContext;
+      if (!AudioContextClass) throw new Error('Web Audio unavailable');
+      fluteContext ||= new AudioContextClass();
+      await fluteContext.resume();
+      fluteMaster=fluteContext.createGain(); fluteMaster.gain.value=.42; fluteMaster.connect(fluteContext.destination);
+      flutePlaying=true; playFlutePhrase(); musicButton.classList.add('playing');
+      musicButton.setAttribute('aria-label','Pause flute birthday song'); musicButton.title='Pause flute birthday song';
+    } catch { musicButton.title='Flute audio is not supported in this browser'; }
+  }
 
   // Low-cost ambient stars: fixed canvas, capped DPR and particle count.
   const canvas = $('#stars'), ctx = canvas.getContext('2d');
@@ -103,6 +162,6 @@ const birthdayConfig = {
   let finaleStarted=false;
   function startFinale(){if(finaleStarted)return;finaleStarted=true;for(let i=0;i<85;i++)setTimeout(()=>burst(Math.random()*innerWidth,-8,1),i*110);const fw=$('#fireworks');for(let i=0;i<8;i++){const p=document.createElement('i');p.className='firework';p.style.left=`${8+Math.random()*84}%`;p.style.top=`${12+Math.random()*60}%`;p.style.setProperty('--x',`${Math.random()*90-45}px`);p.style.setProperty('--y',`${Math.random()*90-45}px`);p.style.animationDelay=`${Math.random()*2}s`;fw.appendChild(p);}}
   $('#replay').addEventListener('click',()=>location.reload());
-  $('#musicToggle').addEventListener('click',async()=>{const b=$('#musicToggle');if(!birthdayConfig.music){b.title='Add a music file and set birthdayConfig.music in script.js';return;}if(music.paused){try{await music.play();b.classList.add('playing');b.setAttribute('aria-label','Pause background music');b.title='Pause music';}catch{b.title='Check the music path in birthdayConfig';}}else{music.pause();b.classList.remove('playing');b.setAttribute('aria-label','Play background music');b.title='Play music';}});
+  musicButton.addEventListener('click',toggleMusic);
 })();
 
